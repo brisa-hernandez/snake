@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
       - name: snake
-        image: ghcr.io/brisa-hernandez/snake:v1
+        image: ghcr.io/brisa-hernandez/snake:v2
         ports: [{ containerPort: 3000 }]
         env:
         - { name: PGSSL, value: "1" }
