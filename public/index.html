@@ -1,32 +1,386 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Snake Multijugador</title></head>
-<body style="background:#222;color:#eee;font-family:sans-serif">
-<h2>Snake multijugador</h2>
-<canvas id="c" width="800" height="600" style="background:#111"></canvas>
-<h3>Top 10</h3><ol id="top"></ol>
-<script>
-const name = prompt('Tu nombre') || 'anon';
-const c = document.getElementById('c'), x = c.getContext('2d');
-const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-ws.onopen = () => ws.send(JSON.stringify({ type: 'join', name }));
-const dirs = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
-onkeydown = e => { if (dirs[e.key]) { e.preventDefault();
-  ws.send(JSON.stringify({ type: 'dir', dx: dirs[e.key][0], dy: dirs[e.key][1] })); } };
-ws.onmessage = e => {
-  const s = JSON.parse(e.data);
-  if (s.type === 'dead') { alert('Perdiste. Puntaje: ' + s.score); location.reload(); return; }
-  const k = 20; x.clearRect(0, 0, 800, 600);
-  x.fillStyle = 'red'; x.fillRect(s.food.x*k, s.food.y*k, k, k);
-  s.players.forEach((p, i) => {
-    x.fillStyle = `hsl(${i*70},80%,55%)`;
-    p.body.forEach(b => x.fillRect(b.x*k, b.y*k, k-1, k-1));
-  });
-};
-async function loadTop() {
-  try {
-    const t = await (await fetch('/api/top10')).json();
-    document.getElementById('top').innerHTML = t.map(r => `<li>${r.name}: ${r.score}</li>`).join('');
-  } catch {}
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perros Salchicha Multijugador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --rojo:#d62828; --rojo-osc:#8f0010; --amarillo:#ffd23f; --crema:#fff1db; --cafe:#4a210a;
 }
-loadTop(); setInterval(loadTop, 10000);
-</script></body></html>
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100vh; color:#fff;
+  font-family:'Baloo 2','Trebuchet MS',Verdana,sans-serif;
+  background:radial-gradient(circle at 15% 0%,#ff5a5f 0,#d62828 42%,#6e0010 100%) fixed;
+}
+header{text-align:center; padding:14px 10px 2px}
+h1{
+  margin:0; font-size:clamp(28px,5.5vw,48px); font-weight:800; letter-spacing:1px;
+  text-shadow:0 4px 0 var(--rojo-osc),0 10px 16px rgba(0,0,0,.35);
+}
+.sub{margin:2px 0 0; font-weight:500; opacity:.95}
+main{
+  display:flex; gap:18px; justify-content:center; align-items:flex-start;
+  flex-wrap:wrap; padding:12px 12px 28px;
+}
+.board{
+  position:relative; width:min(100%,800px);
+  border:6px solid #fff; border-radius:22px; overflow:hidden;
+  background:var(--crema); box-shadow:0 14px 34px rgba(0,0,0,.5);
+}
+canvas{display:block; width:100%; height:auto; touch-action:none}
+.panel{width:min(100%,290px); display:flex; flex-direction:column; gap:14px}
+.card{
+  background:#fff; color:var(--cafe); border-radius:16px; padding:10px 16px 12px;
+  border-top:7px solid var(--amarillo); box-shadow:0 8px 18px rgba(0,0,0,.32);
+}
+.card h2{margin:0 0 4px; font-size:22px; font-weight:800; color:var(--rojo-osc)}
+.big{font-size:44px; font-weight:800; line-height:1; color:var(--rojo)}
+ol,ul{margin:0; padding:0; list-style:none}
+li{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:5px 0; border-bottom:2px dotted #f2cdb0; font-weight:700;
+}
+li:last-child{border-bottom:0}
+li .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+li .pt{color:var(--rojo); font-weight:800}
+.dot{display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; border:2px solid rgba(0,0,0,.25)}
+.vacio{opacity:.6; font-weight:500}
+.hint{font-size:14px; opacity:.95; text-align:center; margin:0}
+.overlay{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; padding:20px;
+  background:rgba(120,0,16,.86); backdrop-filter:blur(2px);
+}
+.overlay.hide{display:none}
+.overlay h2{margin:0 0 6px; font-size:clamp(26px,5vw,42px); font-weight:800; text-shadow:0 3px 0 rgba(0,0,0,.3)}
+.overlay p{margin:0 0 14px; font-size:18px}
+input{
+  font:inherit; font-size:20px; font-weight:700; text-align:center; width:min(80%,280px);
+  padding:10px 14px; border-radius:14px; border:4px solid #fff; outline:none; color:var(--cafe);
+  margin-bottom:14px;
+}
+input:focus{border-color:var(--amarillo)}
+button{
+  font:inherit; font-size:22px; font-weight:800; cursor:pointer;
+  padding:10px 34px; border-radius:999px; border:0; color:var(--rojo-osc);
+  background:var(--amarillo); box-shadow:0 6px 0 #c99a00,0 12px 18px rgba(0,0,0,.35);
+  transition:transform .08s, box-shadow .08s;
+}
+button:active{transform:translateY(4px); box-shadow:0 2px 0 #c99a00,0 6px 10px rgba(0,0,0,.35)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🐕 Perros Salchicha 🦴</h1>
+  <p class="sub">Come huesos, crece y no choques con otros perritos</p>
+</header>
+
+<main>
+  <div class="board">
+    <canvas id="c" width="800" height="600"></canvas>
+
+    <div id="inicio" class="overlay">
+      <h2>¡Guau! ¿Cómo te llamas?</h2>
+      <p>Tu perro salchicha te está esperando</p>
+      <input id="nombre" maxlength="12" placeholder="Tu nombre" autocomplete="off">
+      <button id="jugar">¡A jugar!</button>
+    </div>
+
+    <div id="fin" class="overlay hide">
+      <h2>¡Ay, chocaste! 😵</h2>
+      <p>Tu puntaje: <b id="finPuntos">0</b> huesos</p>
+      <button id="otra">Jugar de nuevo</button>
+    </div>
+  </div>
+
+  <aside class="panel">
+    <div class="card">
+      <h2>Tu puntaje</h2>
+      <div class="big" id="miPuntaje">0</div>
+    </div>
+    <div class="card">
+      <h2>🐶 En juego</h2>
+      <ul id="vivos"><li class="vacio">Nadie todavía</li></ul>
+    </div>
+    <div class="card">
+      <h2>🏆 Top 10</h2>
+      <ol id="top"><li class="vacio">Cargando…</li></ol>
+    </div>
+    <p class="hint">Flechas o W A S D para moverte.<br>En el celular, desliza el dedo sobre el tablero.</p>
+  </aside>
+</main>
+
+<script>
+const K = 20, W = 40, H = 30;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ---------- Fondo (se dibuja una sola vez) ----------
+const bg = document.createElement('canvas');
+bg.width = W * K; bg.height = H * K;
+(function () {
+  const g = bg.getContext('2d');
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      g.fillStyle = (x + y) % 2 ? '#ffe9cc' : '#fff4e3';
+      g.fillRect(x * K, y * K, K, K);
+    }
+})();
+
+// ---------- Colores de perros salchicha ----------
+const PERROS = [
+  { cuerpo: '#c1360f', oscuro: '#7d1f05', hocico: '#e0623a' },  // salchicha rojo (el tuyo)
+  { cuerpo: '#8a4b1f', oscuro: '#4f2608', hocico: '#b3763f' },  // café
+  { cuerpo: '#2d1d16', oscuro: '#120a06', hocico: '#b9753a' },  // negro con fuego
+  { cuerpo: '#d8a05e', oscuro: '#9a6428', hocico: '#ecc58d' },  // crema
+  { cuerpo: '#a85a2b', oscuro: '#5f2d0f', hocico: '#d08a55' },  // chocolate claro
+  { cuerpo: '#6b4a3a', oscuro: '#3a241a', hocico: '#98705a' }   // gris café
+];
+function hash(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+function perroDe(nombre) {
+  if (nombre === miNombre) return PERROS[0];
+  return PERROS[1 + (hash(nombre) % (PERROS.length - 1))];
+}
+
+// ---------- Estado ----------
+let ws, miNombre = '', vivo = false, estado = null, miDir = { dx: 1, dy: 0 }, pendiente = false;
+const ultimaDir = {};
+const $ = id => document.getElementById(id);
+
+function conectar() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => { if (pendiente) { enviarJoin(); } };
+  ws.onmessage = e => {
+    const s = JSON.parse(e.data);
+    if (s.type === 'state') { estado = s; actualizarVivos(s); }
+    else if (s.type === 'dead') perder(s.score);
+  };
+  ws.onclose = () => {
+    $('fin').classList.add('hide');
+    $('inicio').classList.remove('hide');
+    $('inicio').querySelector('h2').textContent = 'Se perdió la conexión';
+    $('inicio').querySelector('p').textContent = 'Recarga la página para volver a jugar';
+    $('nombre').style.display = 'none';
+    $('jugar').textContent = 'Recargar';
+    $('jugar').onclick = () => location.reload();
+  };
+}
+function enviarJoin() {
+  if (ws.readyState !== 1) { pendiente = true; return; }
+  pendiente = false;
+  miDir = { dx: 1, dy: 0 };
+  ws.send(JSON.stringify({ type: 'join', name: miNombre }));
+  vivo = true;
+}
+function empezar() {
+  miNombre = ($('nombre').value.trim() || 'Salchicha').slice(0, 12);
+  $('inicio').classList.add('hide');
+  enviarJoin();
+}
+function perder(puntos) {
+  vivo = false;
+  $('finPuntos').textContent = puntos;
+  $('fin').classList.remove('hide');
+  setTimeout(cargarTop, 600);
+}
+$('jugar').onclick = empezar;
+$('nombre').addEventListener('keydown', e => { if (e.key === 'Enter') empezar(); });
+$('otra').onclick = () => { $('fin').classList.add('hide'); enviarJoin(); };
+
+// ---------- Controles ----------
+const TECLAS = {
+  ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+  w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+  W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0]
+};
+function mover(dx, dy) {
+  if (!vivo || ws.readyState !== 1) return;
+  miDir = { dx, dy };
+  ws.send(JSON.stringify({ type: 'dir', dx, dy }));
+}
+addEventListener('keydown', e => {
+  const t = TECLAS[e.key];
+  if (!t) return;
+  if (e.target.tagName === 'INPUT') return;
+  e.preventDefault();
+  mover(t[0], t[1]);
+});
+let tx = 0, ty = 0;
+canvas.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+canvas.addEventListener('touchend', e => {
+  const t = e.changedTouches[0], dx = t.clientX - tx, dy = t.clientY - ty;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+  if (Math.abs(dx) > Math.abs(dy)) mover(dx > 0 ? 1 : -1, 0); else mover(0, dy > 0 ? 1 : -1);
+}, { passive: true });
+canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+// ---------- Dibujo ----------
+const centro = c => ({ x: (c.x + 0.5) * K, y: (c.y + 0.5) * K });
+function paso(a, b) { // dirección de b hacia a, corrigiendo el cruce de bordes
+  let dx = a.x - b.x, dy = a.y - b.y;
+  if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
+  if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
+  return { dx, dy };
+}
+function direccion(p) {
+  const b = p.body;
+  if (b.length > 1) {
+    const d = paso(b[0], b[1]);
+    if (d.dx || d.dy) ultimaDir[p.name] = d;
+  } else if (p.name === miNombre) {
+    ultimaDir[p.name] = miDir;
+  }
+  return ultimaDir[p.name] || { dx: 1, dy: 0 };
+}
+function linea(a, b, ancho, color) {
+  ctx.strokeStyle = color; ctx.lineWidth = ancho;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+}
+function elipse(x, y, rx, ry, ang, color) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, ang, 0, Math.PI * 2); ctx.fill();
+}
+
+function dibujarPerro(p) {
+  const col = perroDe(p.name), b = p.body, n = b.length;
+  const d = direccion(p), ang = Math.atan2(d.dy, d.dx);
+  const px = -d.dy, py = d.dx; // perpendicular
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  // patitas (debajo del cuerpo)
+  [1, n - 1].forEach(i => {
+    if (i < 1 || i >= n || n < 3) return;
+    const c = centro(b[i]);
+    [-1, 1].forEach(s => elipse(c.x + px * 9 * s, c.y + py * 9 * s, 4.2, 4.2, 0, col.oscuro));
+  });
+
+  // cola
+  const cola = centro(b[n - 1]);
+  const dc = n > 1 ? paso(b[n - 1], b[n - 2]) : { dx: -d.dx, dy: -d.dy };
+  linea(cola, { x: cola.x + dc.dx * 13 + px * 2, y: cola.y + dc.dy * 13 + py * 2 }, 5, col.oscuro);
+
+  // sombra y cuerpo
+  for (let i = n - 1; i >= 0; i--) {
+    const c = centro(b[i]);
+    const prev = i < n - 1 ? centro(b[i + 1]) : c;
+    const salto = i < n - 1 && (Math.abs(b[i].x - b[i + 1].x) > 1 || Math.abs(b[i].y - b[i + 1].y) > 1);
+    const a = salto ? c : prev;
+    linea({ x: a.x, y: a.y + 3 }, { x: c.x, y: c.y + 3 }, 18, 'rgba(0,0,0,.18)');
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    const c = centro(b[i]);
+    const prev = i < n - 1 ? centro(b[i + 1]) : c;
+    const salto = i < n - 1 && (Math.abs(b[i].x - b[i + 1].x) > 1 || Math.abs(b[i].y - b[i + 1].y) > 1);
+    const a = salto ? c : prev;
+    linea(a, c, 18, col.cuerpo);
+  }
+  for (let i = n - 1; i >= 0; i--) { // brillo
+    const c = centro(b[i]);
+    const prev = i < n - 1 ? centro(b[i + 1]) : c;
+    const salto = i < n - 1 && (Math.abs(b[i].x - b[i + 1].x) > 1 || Math.abs(b[i].y - b[i + 1].y) > 1);
+    const a = salto ? c : prev;
+    linea({ x: a.x, y: a.y - 3 }, { x: c.x, y: c.y - 3 }, 5, 'rgba(255,255,255,.2)');
+  }
+
+  // collar dorado
+  if (n > 1) {
+    const c = centro(b[1]);
+    linea({ x: c.x + px * 8, y: c.y + py * 8 }, { x: c.x - px * 8, y: c.y - py * 8 }, 5, '#ffd23f');
+  }
+
+  // cabeza
+  const h = centro(b[0]);
+  [-1, 1].forEach(s => elipse(h.x + px * 9 * s - d.dx * 2, h.y + py * 9 * s - d.dy * 2, 8, 4.8, ang + s * 0.5, col.oscuro)); // orejas largas
+  elipse(h.x, h.y, 10.5, 10.5, 0, col.cuerpo);
+  elipse(h.x + d.dx * 9, h.y + d.dy * 9, 8, 5.6, ang, col.hocico);                                                        // hocico largo
+  elipse(h.x + d.dx * 16, h.y + d.dy * 16, 3.2, 3.2, 0, '#140a06');                                                       // nariz
+  [-1, 1].forEach(s => {                                                                                                 // ojos
+    const ex = h.x + d.dx * 3 + px * 5 * s, ey = h.y + d.dy * 3 + py * 5 * s;
+    elipse(ex, ey, 3.2, 3.2, 0, '#fff');
+    elipse(ex + d.dx * 0.9, ey + d.dy * 0.9, 1.7, 1.7, 0, '#140a06');
+  });
+
+  // nombre
+  let ny = h.y - 20;
+  if (ny < 12) ny = h.y + 28;
+  const etiqueta = p.name === miNombre ? p.name + ' (tú)' : p.name;
+  ctx.font = '800 13px "Baloo 2", Verdana, sans-serif';
+  ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = '#fff';
+  ctx.strokeText(etiqueta, h.x, ny);
+  ctx.fillStyle = p.name === miNombre ? '#c1360f' : '#4a210a';
+  ctx.fillText(etiqueta, h.x, ny);
+}
+
+function hueso(c, t) {
+  const x = (c.x + 0.5) * K, y = (c.y + 0.5) * K, s = 1 + 0.1 * Math.sin(t / 180);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(-0.6); ctx.scale(s, s);
+  const forma = r => {
+    ctx.beginPath(); ctx.rect(-8 * r, -2.8 * r, 16 * r, 5.6 * r);
+    [[-8, -3.4], [-8, 3.4], [8, -3.4], [8, 3.4]].forEach(([a, b]) => {
+      ctx.moveTo(a * r + 4 * r, b * r); ctx.arc(a * r, b * r, 4 * r, 0, Math.PI * 2);
+    });
+    ctx.fill();
+  };
+  ctx.fillStyle = '#c99a58'; forma(1.18);
+  ctx.fillStyle = '#fffaf0'; forma(1);
+  ctx.restore();
+}
+
+function dibujar(t) {
+  ctx.drawImage(bg, 0, 0);
+  if (estado) {
+    hueso(estado.food, t);
+    estado.players.forEach(dibujarPerro);
+  }
+  requestAnimationFrame(dibujar);
+}
+
+// ---------- Paneles ----------
+let firmaVivos = '';
+function actualizarVivos(s) {
+  const lista = [...s.players].sort((a, b) => b.score - a.score);
+  const yo = s.players.find(p => p.name === miNombre);
+  $('miPuntaje').textContent = yo ? yo.score : $('miPuntaje').textContent;
+  const firma = JSON.stringify(lista.map(p => [p.name, p.score]));
+  if (firma === firmaVivos) return;
+  firmaVivos = firma;
+  const ul = $('vivos'); ul.innerHTML = '';
+  if (!lista.length) { ul.innerHTML = '<li class="vacio">Nadie todavía</li>'; return; }
+  lista.forEach(p => {
+    const li = document.createElement('li');
+    const nm = document.createElement('span'); nm.className = 'nm';
+    const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = perroDe(p.name).cuerpo;
+    nm.appendChild(dot); nm.appendChild(document.createTextNode(p.name));
+    const pt = document.createElement('span'); pt.className = 'pt'; pt.textContent = p.score;
+    li.appendChild(nm); li.appendChild(pt); ul.appendChild(li);
+  });
+}
+
+async function cargarTop() {
+  const ol = $('top');
+  try {
+    const filas = await (await fetch('/api/top10')).json();
+    ol.innerHTML = '';
+    if (!filas.length) { ol.innerHTML = '<li class="vacio">Aún no hay puntajes</li>'; return; }
+    const medallas = ['🥇', '🥈', '🥉'];
+    filas.forEach((f, i) => {
+      const li = document.createElement('li');
+      const nm = document.createElement('span'); nm.className = 'nm';
+      nm.textContent = (medallas[i] || (i + 1) + '.') + ' ' + f.name;
+      const pt = document.createElement('span'); pt.className = 'pt'; pt.textContent = f.score;
+      li.appendChild(nm); li.appendChild(pt); ol.appendChild(li);
+    });
+  } catch (e) { ol.innerHTML = '<li class="vacio">No se pudo cargar</li>'; }
+}
+
+conectar();
+cargarTop();
+setInterval(cargarTop, 15000);
+requestAnimationFrame(dibujar);
+$('nombre').focus();
+</script>
+</body>
+</html>
