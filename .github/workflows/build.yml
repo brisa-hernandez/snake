@@ -18,4 +18,4 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/snake:v1
+          tags: ghcr.io/${{ github.repository_owner }}/snake:v2
