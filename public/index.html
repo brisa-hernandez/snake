@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Snake Multijugador</title></head>
+<body style="background:#222;color:#eee;font-family:sans-serif">
+<h2>Snake multijugador</h2>
+<canvas id="c" width="800" height="600" style="background:#111"></canvas>
+<h3>Top 10</h3><ol id="top"></ol>
+<script>
+const name = prompt('Tu nombre') || 'anon';
+const c = document.getElementById('c'), x = c.getContext('2d');
+const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+ws.onopen = () => ws.send(JSON.stringify({ type: 'join', name }));
+const dirs = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
+onkeydown = e => { if (dirs[e.key]) { e.preventDefault();
+  ws.send(JSON.stringify({ type: 'dir', dx: dirs[e.key][0], dy: dirs[e.key][1] })); } };
+ws.onmessage = e => {
+  const s = JSON.parse(e.data);
+  if (s.type === 'dead') { alert('Perdiste. Puntaje: ' + s.score); location.reload(); return; }
+  const k = 20; x.clearRect(0, 0, 800, 600);
+  x.fillStyle = 'red'; x.fillRect(s.food.x*k, s.food.y*k, k, k);
+  s.players.forEach((p, i) => {
+    x.fillStyle = `hsl(${i*70},80%,55%)`;
+    p.body.forEach(b => x.fillRect(b.x*k, b.y*k, k-1, k-1));
+  });
+};
+async function loadTop() {
+  try {
+    const t = await (await fetch('/api/top10')).json();
+    document.getElementById('top').innerHTML = t.map(r => `<li>${r.name}: ${r.score}</li>`).join('');
+  } catch {}
+}
+loadTop(); setInterval(loadTop, 10000);
+</script></body></html>
